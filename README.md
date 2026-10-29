@@ -77,10 +77,11 @@ composants qui respectent ce réglage.
 
 ## Voix et génération
 
-Les références dans `voices/references_fr` associent un WAV ou FLAC à une
-transcription `.txt` de même nom. La référence est préparée une seule fois et
-réutilisée pour tous les passages. Le choix par défaut est
-`expr_chap_s01_0004-7e5a77eb`.
+Seul l’échantillon SIWIS nº 4 est fourni dans `voices/references_fr` :
+`expr_chap_s01_0004-7e5a77eb`, utilisé par défaut. Une référence associe un WAV
+ou FLAC à une transcription `.txt` de même nom. Elle est préparée une seule
+fois et réutilisée pour tous les passages. Des références personnelles peuvent
+être ajoutées dans ce dossier ; elles restent exclues de Git.
 
 Faster conserve **bfloat16**, l’attention **eager**, quatre threads PyTorch et
 ses graphes CUDA. Le moteur reste chargé entre les chapitres et les livres.
@@ -172,8 +173,8 @@ Journaux locaux :
 
 Les livres, références vocales et audios de `output` sont conservés. Les
 poids, caches, données personnelles et médias générés restent exclus de Git.
-Seuls l’EPUB public de démonstration et les références SIWIS explicitement
-autorisées sont distribués. Leur provenance figure dans les README de
+Seuls l’EPUB public de démonstration et la référence SIWIS nº 4 sont
+distribués. Leur provenance figure dans les README de
 `assets/samples` et `voices/references_fr`.
 
 ## Tests

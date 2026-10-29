@@ -158,11 +158,15 @@ class PublicationTests(unittest.TestCase):
         ignored = ['input/private.epub','output/private.wav','models/model.safetensors',
                    '.venv/pyvenv.cfg','.venv-check/file.py','.cache/preferences.json',
                    'voices/references_fr/private.wav','voices/references_fr/private.txt',
+                   'voices/references_fr/expr_chap_s01_0001.wav',
+                   'voices/references_fr/expr_chap_s01_0001.txt',
+                   'voices/references_fr/expr_chap_s01_0004.wav',
                    'voices/private.wav','.env','other/model.gguf']
         shared = ['installer.py','installation_sources.json','model_sources.json',
                   'assets/samples/vingt-mille-lieues-chapitre-1.epub',
                   'voices/references_fr/expr_chap_s01_0004-7e5a77eb.wav',
-                  'voices/references_fr/expr_chap_s01_0001.txt','voices/references_fr/README.md']
+                  'voices/references_fr/expr_chap_s01_0004-7e5a77eb.txt',
+                  'voices/references_fr/README.md']
         result = subprocess.run(['git','check-ignore','--no-index','--stdin'],cwd=ROOT,
                                 input=('\n'.join(ignored+shared)+'\n').encode(),capture_output=True)
         self.assertEqual(result.returncode,0,result.stderr)

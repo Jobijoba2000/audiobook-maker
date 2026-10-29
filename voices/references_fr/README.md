@@ -1,7 +1,7 @@
-# Références vocales SIWIS
+# Référence vocale SIWIS nº 4
 
-Les enregistrements `expr_chap_s01_0001` à `expr_chap_s01_0013` et leurs
-transcriptions proviennent de **The SIWIS French Speech Synthesis Database**.
+Seul l’échantillon nº 4 et sa transcription sont fournis. Ils proviennent de
+**The SIWIS French Speech Synthesis Database**.
 
 Attribution : Junichi Yamagishi, Pierre-Edouard Honnet, Philip Garner et
 Alexandros Lazaridis (2017), *The SIWIS French Speech Synthesis Database, 2016*,
@@ -17,5 +17,5 @@ fichier `wavs/part5/expr_chap_s01_0004.wav`, convertie en mono PCM16 à 24 kHz.
 Sa transcription est jointe dans le fichier `.txt` du même nom.
 
 Les autres enregistrements personnels et leurs transcriptions sont ignorés
-par Git. Seul le sous-ensemble SIWIS listé explicitement dans `.gitignore`
-est destiné à être distribué.
+par Git. Seuls les fichiers de cette référence nº 4 sont autorisés
+explicitement dans `.gitignore` pour être distribués.
