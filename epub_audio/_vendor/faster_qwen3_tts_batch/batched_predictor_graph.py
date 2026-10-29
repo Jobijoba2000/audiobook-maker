@@ -211,7 +211,7 @@ class BatchedPredictorGraph:
                 torch.cuda.synchronize()
 
                 self.static_cache.reset()
-                with torch.cuda.graph(self.graph):
+                with torch.cuda.graph(self.graph, pool=getattr(self, '_capture_pool', None)):
                     self._full_loop()
 
         torch.cuda.current_stream().wait_stream(s)

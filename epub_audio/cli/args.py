@@ -25,6 +25,8 @@ def arguments(argv=None, default_directory=None):
                         help='Batching activé par défaut ; --no-batching pour désactiver.')
     parser.add_argument('--continuous-batching', action=argparse.BooleanOptionalAction, default=None,
                         help='Faster uniquement, expérimental et désactivé par défaut : réutilisation continue des places GPU ; sinon groupes par longueur.')
+    parser.add_argument('--shrinking-batching', action=argparse.BooleanOptionalAction, default=None,
+                        help='Réduire les calculs GPU quand les passages terminent (dernier choix, sinon activé) ; --no-shrinking-batching pour comparer.')
     parser.add_argument('--batch-size', type=int, choices=BATCH_SIZE_CHOICES,
                         help='Active le batching avec 2, 3, 4, 5, 6, 7 ou 8 passages ; sinon taille mémorisée, par défaut 6.')
     parser.add_argument('--segmentation', choices=SEGMENTATION_MODES,

@@ -263,7 +263,7 @@ class ChapterCLIIntegrationTests(unittest.TestCase):
     def test_interactive_option_and_preference_are_remembered(self):
         with patch('epub_audio.cli.main.plan_books', return_value=({self.source.resolve(): source_plan()}, False)), \
              patch('epub_audio.cli.main.QwenEngine'), patch('epub_audio.cli.main.process_book'), \
-             patch('builtins.input', side_effect=['', '2', '']) as ask:
+             patch('builtins.input', side_effect=['', '2', '', '']) as ask:
             self.assertEqual(main([str(self.source), '--voice', 'expr_chap_s01_0004-7e5a77eb',
                                    '--batch-size', '6', '--segmentation', 'paragraph', '--format', 'wav', '--no-normalize']), 0)
         self.assertTrue(load_preferences()['llm_chapters'])

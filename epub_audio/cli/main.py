@@ -6,7 +6,7 @@ import sys
 import time
 from epub_audio.cli.args import arguments
 from epub_audio.cli.selectors import (parse_selection, select_input_output,
-                                      select_batching, select_segmentation, select_convert_numbers,
+                                      select_batching, select_shrinking_batching, select_segmentation, select_convert_numbers,
                                       select_llm_chapters,
                                       select_audio_format, select_bitrate, select_sample_rate,
                                       select_normalization)
@@ -173,6 +173,16 @@ def main(argv=None, default_directory=None):
         batching = selection > 1
         if batching:
             batch_size = selection
+    if args.continuous_batching is True and not batching:
+        raise ValueError('Le mode continu nécessite le batching de Faster-Qwen3-TTS.')
+    if args.shrinking_batching is True and (not batching or args.continuous_batching is True):
+        raise ValueError('La réduction progressive nécessite le batching sans mode continu.')
+    continuous = batching and args.continuous_batching is True
+    shrinking_requested = (args.shrinking_batching if args.shrinking_batching is not None
+                           else preferences.get('shrinking_batching', True))
+    if batching and not continuous and args.shrinking_batching is None and ask('shrinking_batching'):
+        shrinking_requested = select_shrinking_batching(shrinking_requested)
+    shrinking = batching and not continuous and shrinking_requested
     segmentation = args.segmentation or preferences.get('segmentation', DEFAULT_SEGMENTATION)
     if ask('segmentation') and args.segmentation is None:
         segmentation = select_segmentation(segmentation)
@@ -200,12 +210,9 @@ def main(argv=None, default_directory=None):
             sample_rate = 48000
         if ask('sample_rate') and not args.frequency_explicit:
             sample_rate = select_sample_rate(sample_rate, audio_format)
-    if args.continuous_batching is True and not batching:
-        raise ValueError('Le mode continu nécessite le batching de Faster-Qwen3-TTS.')
     normalize = args.normalize if args.normalize is not None else preferences.get('normalize', DEFAULT_NORMALIZE)
     if ask('normalize') and args.normalize is None:
         normalize = select_normalization(normalize)
-    continuous = batching and args.continuous_batching is True
     options = AudioOptions(speed=rate, workers=args.workers, audio_format=audio_format,
                            bitrate=bitrate, sample_rate=sample_rate, segmentation=segmentation,
                            convert_numbers=convert_numbers, normalize=normalize)
@@ -226,6 +233,7 @@ def main(argv=None, default_directory=None):
             encoding += ' en entrée encodeur, décodage à 48 kHz'
     voice_name = next(item['display_name'] for item in all_voices if item['id'] == voice)
     generation_label = (f'batching continu, jusqu’à {batch_size} passages simultanés' if continuous
+                        else f'batching par {batch_size} passages, réduction progressive active' if shrinking
                         else f'batching par {batch_size} passages' if batching else f'{workers} génération à la fois')
     engine_label = f'{ENGINE_NAME} {DEFAULT_MODEL_SIZE}'
     print(f'\n{len(epubs)} livre(s), {engine_label}, {voice_name}, vitesse {rate:g}, {encoding} '
@@ -245,7 +253,7 @@ def main(argv=None, default_directory=None):
         save_preferences(voice, rate, bitrate, audio_format, sample_rate, segmentation=segmentation,
                          faster_small_batching=batching,
                          faster_small_batch_size=batch_size, prompts=prompts, convert_numbers=convert_numbers,
-                         llm_chapters=llm_chapters, normalize=normalize)
+                         llm_chapters=llm_chapters, normalize=normalize, shrinking_batching=shrinking_requested)
     except OSError as exc:
         console.message(f'Impossible de mémoriser les réglages : {exc}')
     started = time.perf_counter()
@@ -257,7 +265,8 @@ def main(argv=None, default_directory=None):
     if plans is not None and not plans:
         return 1
     engine = QwenEngine(voice, offline=args.offline, message=console.message, speed=rate,
-                        batching=batching, batch_size=batch_size, continuous_batching=continuous)
+                        batching=batching, batch_size=batch_size, continuous_batching=continuous,
+                        shrinking_batching=shrinking)
     engine.prepare()
     for path in epubs:
         if plans is not None and path not in plans:

@@ -16,11 +16,11 @@ class ConsoleTests(unittest.TestCase):
                  patch('epub_audio.cli.main.process_book') as process, \
                  patch('epub_audio.cli.main.load_preferences', return_value={'rate':1.7}), \
                  patch('epub_audio.cli.main.save_preferences'), \
-                 patch('builtins.input', side_effect=['','','']) as prompt, \
+                 patch('builtins.input', side_effect=['','','','']) as prompt, \
                  patch('sys.stdout', new=io.StringIO()) as output:
                 self.assertEqual(main([str(source),'--segmentation','paragraph','--codec','wav','--voice','expr_chap_s01_0004-7e5a77eb','--no-llm-chapters','--no-normalize']),0)
             self.assertIn('Temps total écoulé',output.getvalue())
-            self.assertEqual(prompt.call_count,3)
+            self.assertEqual(prompt.call_count,4)
             self.assertFalse(any('Vitesse' in call.args[0] for call in prompt.call_args_list))
             self.assertEqual(engine.call_args.kwargs['speed'],1.0)
             self.assertEqual(process.call_args.kwargs['options'].speed,1.0)

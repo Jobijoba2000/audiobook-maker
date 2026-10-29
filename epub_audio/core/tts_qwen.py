@@ -59,7 +59,8 @@ class QwenEngine:
     # Un seul moteur GPU, partagé par une file de synthèse séquentielle.
     serial_gpu = True
 
-    def __init__(self, voice=None, offline=True, message=print, speed=1.0, batching=False, batch_size=2, continuous_batching=False):
+    def __init__(self, voice=None, offline=True, message=print, speed=1.0, batching=False, batch_size=2,
+                 continuous_batching=False, shrinking_batching=True):
         self.settings = configuration()
         self.engine_id = DEFAULT_ENGINE
         self.model_size = DEFAULT_MODEL_SIZE
@@ -69,7 +70,10 @@ class QwenEngine:
             raise ValueError('Taille du groupe de batching invalide : choisissez 2, 3, 4, 5, 6, 7 ou 8.')
         if type(continuous_batching) is not bool:
             raise ValueError('Réglage de batching continu invalide.')
+        if type(shrinking_batching) is not bool:
+            raise ValueError('Réglage de réduction des lots invalide.')
         self.continuous_batching = batching and continuous_batching
+        self.shrinking_batching = batching and not self.continuous_batching and shrinking_batching
         self.batching = batching
         self.batch_size = batch_size if batching else 1
         self.batch_backend = None
@@ -152,9 +156,16 @@ class QwenEngine:
                 try:
                     from epub_audio.core.tts_batch import FasterBatchBackend
                     self.batch_backend = FasterBatchBackend(fast, self.settings, batch_size=self.batch_size,
-                                                            adaptive_cache=not self.continuous_batching)
+                                                            adaptive_cache=not self.continuous_batching,
+                                                            shrinking_batching=self.shrinking_batching)
                     if not self.continuous_batching:
                         self.message('Cache GPU adaptatif prêt : 768 / 1024 / 1536 / 3072 positions.')
+                    if self.shrinking_batching:
+                        if self.batch_backend.shrinking_error:
+                            self.message(self.batch_backend.shrinking_error)
+                            self.shrinking_batching = False
+                        else:
+                            self.message(f'Réduction progressive active : {self.batch_size} vers 1 passage, au fil des fins.')
                 except RuntimeError as exc:
                     raise RuntimeError('Impossible de préparer le batching. Relancez avec un groupe plus petit ou sans batching. '
                                        + str(exc)) from exc
@@ -162,6 +173,7 @@ class QwenEngine:
             report = dict(engine=self.engine_id, engine_version='0.3.2', run_id=self.run_id,
                           model=f'Qwen3-TTS-{self.model_size}-Base', model_size=self.model_size,
                           batching=self.batching, batch_size=self.batch_size, continuous_batching=self.continuous_batching,
+                          shrinking_batching=self.shrinking_batching,
                           adaptive_cache=self.batching and not self.continuous_batching,
                           precision='bfloat16', attention=attention,
                           voice=self.voice, reference_sha256=hashlib.sha256(reference.read_bytes()).hexdigest(),
@@ -236,6 +248,8 @@ class QwenEngine:
                 generation_seconds=round(generation_seconds if generation_seconds is not None else time.perf_counter() - started, 3),
                 duration_seconds=len(samples) / rate / self.speed, finished=True,
                 generated_tokens=timing.get('steps'), batch_size=batch_size, batch_id=batch_id,
+                shrinking_batching=timing.get('shrinking_batching', False),
+                batch_min_size=timing.get('batch_min_size'), batch_width_steps=timing.get('batch_width_steps'),
                 continuous_batching=timing.get('continuous_batching', False))) + '\n')
         return destination
 

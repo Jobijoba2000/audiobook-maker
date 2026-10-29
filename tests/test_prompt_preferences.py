@@ -34,15 +34,16 @@ class PromptPreferencesTests(unittest.TestCase):
         prompts = {name: False for name in ('segmentation', 'audio_format', 'bitrate', 'sample_rate', 'normalize')}
         self.write(prompts)
         for _ in range(2):
-            with patch('builtins.input', side_effect=['', '', '', '', '']) as ask:
+            with patch('builtins.input', side_effect=['', '', '', '', '', '']) as ask:
                 self.assertEqual(main([str(self.source)]), 0)
             questions = [call.args[0] for call in ask.call_args_list]
-            self.assertEqual(len(questions), 5)
+            self.assertEqual(len(questions), 6)
             self.assertTrue(questions[0].startswith('Livres à traiter'))
             self.assertTrue(questions[1].startswith('Améliorer le découpage'))
             self.assertTrue(questions[2].startswith('Voix de référence'))
             self.assertTrue(questions[3].startswith('Batching'))
-            self.assertTrue(questions[4].startswith('Entrée pour commencer'))
+            self.assertTrue(questions[4].startswith('Réduction progressive'))
+            self.assertTrue(questions[5].startswith('Entrée pour commencer'))
             options = self.process.call_args.kwargs['options']
             self.assertEqual((options.segmentation, options.audio_format, options.bitrate, options.sample_rate),
                              ('paragraph', 'opus', 48, 24000))
@@ -162,3 +163,67 @@ class PromptPreferencesTests(unittest.TestCase):
                     save_preferences(self.settings['voice'], 1, convert_numbers=invalid)
                 with self.assertRaises(ValueError):
                     AudioOptions(convert_numbers=invalid)
+
+    def test_shrinking_menu_selects_and_remembers_both_values(self):
+        prompts = dict.fromkeys(PROMPT_NAMES, False)
+        prompts['shrinking_batching'] = True
+        for answer, expected in (('1', False), ('2', True)):
+            with self.subTest(answer=answer):
+                self.write(prompts)
+                with patch('builtins.input', side_effect=['', 'invalid', answer]) as ask:
+                    self.assertEqual(main([str(self.source)]), 0)
+                self.assertIn('Réduction progressive', ask.call_args.args[0])
+                self.assertIs(self.engine.call_args.kwargs['shrinking_batching'], expected)
+                self.assertIs(load_preferences()['shrinking_batching'], expected)
+                with patch('builtins.input', side_effect=['', '']) as ask:
+                    self.assertEqual(main([str(self.source)]), 0)
+                self.assertIn('[2]' if expected else '[1]', ask.call_args.args[0])
+                self.assertIs(self.engine.call_args.kwargs['shrinking_batching'], expected)
+
+    def test_explicit_shrinking_flags_override_preferences_and_skip_menu(self):
+        prompts = dict.fromkeys(PROMPT_NAMES, False)
+        prompts['shrinking_batching'] = True
+        for flag, expected in (('--shrinking-batching', True), ('--no-shrinking-batching', False)):
+            with self.subTest(flag=flag):
+                self.settings['shrinking_batching'] = not expected
+                self.write(prompts)
+                with patch('builtins.input', side_effect=['']) as ask:
+                    self.assertEqual(main([str(self.source), flag]), 0)
+                self.assertEqual(ask.call_count, 1)
+                self.assertIs(self.engine.call_args.kwargs['shrinking_batching'], expected)
+                self.assertIs(load_preferences()['shrinking_batching'], expected)
+        for incompatible in ('--no-batching', '--continuous-batching'):
+            with self.subTest(incompatible=incompatible), self.assertRaises(ValueError):
+                main([str(self.source), '--yes', '--shrinking-batching', incompatible])
+
+    def test_hidden_shrinking_choice_and_no_batching_preserve_preferences(self):
+        self.settings['shrinking_batching'] = True
+        self.write(dict.fromkeys(PROMPT_NAMES, False))
+        with patch('builtins.input', side_effect=['']):
+            self.assertEqual(main([str(self.source), '--no-batching']), 0)
+        self.assertFalse(self.engine.call_args.kwargs['shrinking_batching'])
+        self.assertTrue(load_preferences()['shrinking_batching'])
+        with patch('builtins.input', side_effect=['']):
+            self.assertEqual(main([str(self.source), '--batch-size', '6']), 0)
+        self.assertTrue(self.engine.call_args.kwargs['shrinking_batching'])
+        save_preferences(self.settings['voice'], 1)
+        self.assertTrue(load_preferences()['shrinking_batching'])
+        with patch('builtins.input', side_effect=['']):
+            self.assertEqual(main([str(self.source), '--continuous-batching', '--batch-size', '6']), 0)
+        self.assertFalse(self.engine.call_args.kwargs['shrinking_batching'])
+
+    def test_shrinking_setting_requires_boolean_and_defaults_to_enabled(self):
+        from epub_audio.core.tts_qwen import QwenEngine
+        self.write(dict.fromkeys(PROMPT_NAMES, False))
+        with patch('builtins.input', side_effect=['']):
+            self.assertEqual(main([str(self.source)]), 0)
+        self.assertTrue(self.engine.call_args.kwargs['shrinking_batching'])
+        for invalid in ('false', 0, 1, [], {}):
+            with self.subTest(value=invalid):
+                self.settings['shrinking_batching'] = invalid
+                self.write({})
+                self.assertNotIn('shrinking_batching', load_preferences())
+                with self.assertRaises(ValueError):
+                    save_preferences(self.settings['voice'], 1, shrinking_batching=invalid)
+                with self.assertRaises(ValueError):
+                    QwenEngine(shrinking_batching=invalid)

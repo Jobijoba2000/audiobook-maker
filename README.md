@@ -94,6 +94,22 @@ La valeur initiale est **6** et le dernier choix est mémorisé. Les lots sont
 regroupés par longueur dans une fenêtre bornée, avec restitution des audios
 dans l’ordre du livre.
 
+Le menu **Réduction progressive des lots** apparaît après le choix du batching :
+`1. Non`, `2. Oui`. Le choix est mémorisé ; il est activé à la première utilisation.
+Avec cette réduction, le lot commence à la taille choisie, puis les calculs GPU
+diminuent au fil des passages terminés, jusqu’à un seul passage actif.
+Les poids, les caches et les zones de travail temporaires des variantes exécutées
+séquentiellement sont partagés. Les allocations inutilisées sont libérées avant
+chaque décodage audio pour limiter la mémoire réservée sur les cartes de 8 Go.
+La préparation initiale est plus longue ; elle est réutilisée entre les lots.
+Les limites et les réessais individuels restent en place.
+
+Le résumé affiche « réduction progressive active ». Les options
+`--shrinking-batching` et `--no-shrinking-batching` permettent de comparer les modes.
+Le mode continu utilise son propre fonctionnement ; cette réduction s’applique
+aux lots classiques. En cas de mémoire GPU insuffisante pendant sa préparation,
+un message annonce le retour aux lots fixes.
+
 Les optimisations sont conservées : cache GPU adaptatif **768 / 1024 / 1536 /
 3072 positions** partageant la même allocation, masques et positions capturés,
 embeddings du codec calculés dans un graphe, historique des jetons préalloué
@@ -163,7 +179,7 @@ export, entre 1 et 20, avec 20 par défaut. Le temps **génération TTS** est
 affiché séparément du temps total comprenant chargement et export.
 
 Les choix sont mémorisés dans `.cache/preferences.json`. La section `prompts`
-peut masquer individuellement les questions `voice`, `batching`,
+peut masquer individuellement les questions `voice`, `batching`, `shrinking_batching`,
 `segmentation`, `llm_chapters`, `convert_numbers`, `audio_format`, `bitrate`,
 `sample_rate`, `normalize` et `confirmation`. Les anciennes préférences
 migrent vers la dernière voix Faster en conservant le batching et les exports.
@@ -173,6 +189,10 @@ Journaux locaux :
 - `.cache/qwen-last-run.json` : modèle, référence et configuration ;
 - `.cache/qwen-segments.jsonl` : durée et temps de génération des passages ;
 - `.cache/qwen-batch-failures.jsonl` : passages incomplets et erreurs des lots.
+
+Le champ `shrinking_batching` indique si la réduction est effectivement utilisée.
+Les segments générés en lot conservent aussi `batch_min_size` et `batch_width_steps`
+pour suivre les tailles de calcul actives.
 
 Les livres, références vocales et audios de `output` sont conservés. Les
 poids, caches, données personnelles et médias générés restent exclus de Git.

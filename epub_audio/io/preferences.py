@@ -11,7 +11,7 @@ from epub_audio.config.defaults import (DEFAULT_AUDIO_FORMAT, DEFAULT_BITRATE, D
                                         DEFAULT_CONVERT_NUMBERS, DEFAULT_NORMALIZE)
 
 PREFERENCES_FILE = ROOT / '.cache' / 'preferences.json'
-PROMPT_NAMES = ('voice', 'batching', 'segmentation', 'llm_chapters', 'convert_numbers', 'audio_format', 'bitrate', 'sample_rate', 'normalize', 'confirmation')
+PROMPT_NAMES = ('voice', 'batching', 'shrinking_batching', 'segmentation', 'llm_chapters', 'convert_numbers', 'audio_format', 'bitrate', 'sample_rate', 'normalize', 'confirmation')
 
 
 def load_preferences():
@@ -35,6 +35,8 @@ def load_preferences():
         preferences['faster_small_batch_size'] = data['faster_small_batch_size']
     if type(data.get('faster_small_batching')) is bool:
         preferences['faster_small_batching'] = data['faster_small_batching']
+    if type(data.get('shrinking_batching')) is bool:
+        preferences['shrinking_batching'] = data['shrinking_batching']
     if isinstance(data.get('segmentation'), str) and data['segmentation'] in SEGMENTATION_MODES:
         preferences['segmentation'] = data['segmentation']
     # Migrate the last Faster reference from old per-engine preferences.
@@ -63,8 +65,12 @@ def load_preferences():
 def save_preferences(voice, rate, bitrate=DEFAULT_BITRATE, audio_format=DEFAULT_AUDIO_FORMAT,
                      sample_rate=DEFAULT_SAMPLE_RATE,
                      segmentation=DEFAULT_SEGMENTATION, faster_small_batching=False, faster_small_batch_size=2,
-                     prompts=None, convert_numbers=None, llm_chapters=None, normalize=None):
+                     prompts=None, convert_numbers=None, llm_chapters=None, normalize=None, shrinking_batching=None):
     existing = load_preferences()
+    if shrinking_batching is None:
+        shrinking_batching = existing.get('shrinking_batching', True)
+    if type(shrinking_batching) is not bool:
+        raise ValueError('Réduction progressive des lots invalide : utilisez true ou false.')
     if normalize is None:
         normalize = existing.get('normalize', DEFAULT_NORMALIZE)
     if type(normalize) is not bool:
@@ -100,7 +106,7 @@ def save_preferences(voice, rate, bitrate=DEFAULT_BITRATE, audio_format=DEFAULT_
                     'bitrate': bitrate, 'sample_rate': sample_rate,
                     'segmentation': segmentation, 'faster_small_batching': faster_small_batching,
                     'faster_small_batch_size': faster_small_batch_size, 'convert_numbers': convert_numbers,
-                    'llm_chapters': llm_chapters, 'normalize': normalize}
+                    'llm_chapters': llm_chapters, 'normalize': normalize, 'shrinking_batching': shrinking_batching}
             if prompts:
                 data['prompts'] = prompts
             json.dump(data, stream,

@@ -54,3 +54,9 @@ Individual progress notifications reuse the periodic host completion read.
 Only genuine, nonempty EOS completions notify the callback; padded slots and
 budget-expired rows never count as finished. At an exact budget boundary, a
 GPU EOS check resolves the ambiguity. Notifications never accept partial codes.
+
+Optional shrinking variants share temporary CUDA graph workspaces between
+sequential replays. Their inputs, outputs and KV storage are allocated outside
+capture; talker and predictor retain separate pools. The application compacts
+surviving KV history and routes outputs back to their original row positions.
+Sampling retains the original batch width and row positions.

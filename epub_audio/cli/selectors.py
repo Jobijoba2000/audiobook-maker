@@ -173,6 +173,11 @@ def select_batching(default):
     return _select_number('Batching Qwen', (1, *BATCH_SIZE_CHOICES), default, labels.__getitem__)
 
 
+def select_shrinking_batching(default):
+    return _select_number('Réduction progressive des lots', (False, True), default,
+                          lambda value: 'Oui' if value else 'Non')
+
+
 def select_segmentation(default):
     return _select_number('Découpage des segments', tuple(SEGMENTATION_MODES), default,
                           SEGMENTATION_MODES.__getitem__)

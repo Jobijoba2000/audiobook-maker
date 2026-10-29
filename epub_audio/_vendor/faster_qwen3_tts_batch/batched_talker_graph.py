@@ -159,7 +159,7 @@ class BatchedTalkerGraph:
                 self._decode_step()
                 torch.cuda.synchronize()
 
-                with torch.cuda.graph(self.graph):
+                with torch.cuda.graph(self.graph, pool=getattr(self, '_capture_pool', None)):
                     self._decode_step()
 
         torch.cuda.current_stream().wait_stream(s)

@@ -59,7 +59,7 @@ class BatchingTests(unittest.TestCase):
                 with patch('epub_audio.io.preferences.PREFERENCES_FILE', root/'prefs.json'), \
                      patch('epub_audio.cli.main.QwenEngine') as engine, \
                      patch('epub_audio.cli.main.process_book') as process, \
-                     patch('builtins.input', side_effect=['', 'invalid', choice, '']), \
+                     patch('builtins.input', side_effect=['', 'invalid', choice, '', '']), \
                      patch('sys.stdout', new=io.StringIO()) as output:
                     self.assertEqual(main(flags), 0)
                     self.assertIs(engine.call_args.kwargs['batching'], expected)
@@ -75,7 +75,7 @@ class BatchingTests(unittest.TestCase):
                     self.assertIn('6. Batching par 6 passages', output.getvalue())
                     self.assertIn('7. Batching par 7 passages', output.getvalue())
                     self.assertIn('8. Batching par 8 passages', output.getvalue())
-                    with patch('builtins.input', side_effect=['', '', '']) as prompts:
+                    with patch('builtins.input', side_effect=['', '', '', '']) as prompts:
                         self.assertEqual(main(flags), 0)
                     self.assertIn('['+choice+']', prompts.call_args_list[1].args[0])
                     self.assertIs(engine.call_args.kwargs['batching'], expected)
