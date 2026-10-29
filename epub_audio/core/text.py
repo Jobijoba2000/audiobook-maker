@@ -7,10 +7,27 @@ from epub_audio.config.defaults import (SCENE_BREAK, PARAGRAPH_PAUSE_MS, SCENE_P
                                         MAX_PARAGRAPH_CHARACTERS, PARAGRAPH_TARGET_MIN, PARAGRAPH_TARGET_MAX)
 
 _NUMBER_ABBREVIATION = re.compile(r'(?<!\w)n[°º][^\S\r\n]*', re.IGNORECASE)
+_INTERNET_URL = re.compile(r'''(?<![\w@])(?:https?://|ftps?://|www\.)[^\s<>«»“”"]+''', re.IGNORECASE)
+
+
+def _spoken_url(match):
+    url = match.group()
+    end = len(url)
+    brackets = {')': '(', ']': '[', '}': '{'}
+    while end:
+        last = url[end - 1]
+        if (last in ".,;:!?…'’"
+                or (last in brackets and url[:end].count(last) > url[:end].count(brackets[last]))):
+            end -= 1
+        else:
+            break
+    # Keep enclosing quotes/brackets; the spoken label already ends the sentence.
+    return 'Lien internet.' + url[end:].lstrip('.,;:!?…')
 
 
 def prepare_spoken_text(text):
-    """Expand number abbreviations with one space before the following number."""
+    """Prepare narration URLs and number abbreviations before splitting."""
+    text = _INTERNET_URL.sub(_spoken_url, text)
     return _NUMBER_ABBREVIATION.sub('numéro ', text)
 
 

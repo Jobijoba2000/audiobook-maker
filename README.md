@@ -119,7 +119,10 @@ conserve les paragraphes ; `--segmentation sentence` découpe par phrases.
 Les paragraphes longs sont répartis en passages plus courts.
 
 L’introduction utilise les métadonnées du livre. Les titres sont préparés
-pour être prononcés. `--convert-numbers` et `--no-convert-numbers` contrôlent
+pour être prononcés. Les URL commençant par `http://`, `https://`, `ftp://`,
+`ftps://` ou `www.` sont remplacées par « Lien internet. » avant le découpage
+des segments, y compris dans l’introduction. Le fichier EPUB reste intact.
+`--convert-numbers` et `--no-convert-numbers` contrôlent
 la conversion des nombres en lettres. Les pauses habituelles restent de
 800 ms entre paragraphes, 1 500 ms aux ruptures de scène et 2 000 ms après
 l’introduction. La voix garde son débit naturel ; `--rate 1.1` applique un
