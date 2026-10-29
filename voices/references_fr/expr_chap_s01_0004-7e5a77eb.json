@@ -1,0 +1,7 @@
+{
+  "source": "SiwisFrenchSpeechSynthesisDatabase/wavs/part5/expr_chap_s01_0004.wav",
+  "duration_seconds": 17.344083333333334,
+  "dataset": "https://doi.org/10.7488/ds/1705",
+  "license": "CC-BY-4.0",
+  "adaptation": "Mono PCM16, 24000 Hz"
+}

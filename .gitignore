@@ -1,0 +1,79 @@
+# User library and generated audiobooks
+/input/
+/output/
+/ebook_ancien_programme/
+
+# Downloaded voices, preferences and Python runtime
+/.cache/
+/.venv/
+/.venv-linux/
+/.venv-*/
+/venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+# Temporary work and media (never version user books or audio)
+/tmp/
+/temp/
+.ebook-*/
+*.epub
+*.mobi
+*.azw3
+*.wav
+*.mp3
+*.m4a
+*.opus
+*.zip
+*.7z
+*.log
+*.jsonl
+*.safetensors
+*.gguf
+*.onnx
+*.pt
+*.pth
+*.ckpt
+*.bin
+*.whl
+*.exe
+*.dll
+
+# Only the small public-domain demonstration EPUB is distributed
+!/assets/samples/vingt-mille-lieues-chapitre-1.epub
+
+# Local editor settings and secrets
+/.idea/
+/.vscode/
+/.codex/
+/.agents/
+/.aws/
+/.ssh/
+.env
+.env.*
+!.env.example
+Thumbs.db
+Desktop.ini
+
+# Local Qwen weights and generated references
+/models/
+/requirements.installed.txt
+*.egg-info/
+.DS_Store
+
+# Personal voice recordings/transcripts stay local; whitelist the bundled SIWIS subset
+/voices/*
+!/voices/references_fr/
+/voices/references_fr/*
+!/voices/references_fr/README.md
+!/voices/references_fr/expr_chap_s01_000[1-9].wav
+!/voices/references_fr/expr_chap_s01_000[1-9].txt
+!/voices/references_fr/expr_chap_s01_001[0-3].wav
+!/voices/references_fr/expr_chap_s01_001[0-3].txt
+!/voices/references_fr/expr_chap_s01_0004-7e5a77eb.wav
+!/voices/references_fr/expr_chap_s01_0004-7e5a77eb.txt
+!/voices/references_fr/expr_chap_s01_0004-7e5a77eb.json

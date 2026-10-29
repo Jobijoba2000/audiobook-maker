@@ -1,0 +1,38 @@
+"""Shared defaults for CLI, processing and synthesis."""
+ENGINE_NAME = 'Faster-Qwen3-TTS'
+DEFAULT_ENGINE = 'faster-qwen'
+DEFAULT_MODEL_SIZE = '0.6B'
+DEFAULT_BATCHING = True
+DEFAULT_BATCH_SIZE = 6
+BATCH_SIZE_CHOICES = (2, 3, 4, 5, 6, 7, 8)
+SEGMENTATION_MODES = {'paragraph': 'Par paragraphes', 'sentence': 'Par phrases'}
+DEFAULT_SEGMENTATION = 'paragraph'
+DEFAULT_CONVERT_NUMBERS = True
+DEFAULT_NORMALIZE = False
+NORMALIZE_LUFS = -18.0
+NORMALIZE_TRUE_PEAK = -3.0
+NORMALIZE_LRA = 11.0
+DEFAULT_SPEED = 1.0
+DEFAULT_BITRATE = 128
+DEFAULT_AUDIO_FORMAT = 'wav'
+DEFAULT_SAMPLE_RATE = 24000
+AUDIO_FORMATS = ('mp3', 'aac', 'opus', 'wav')
+BITRATE_CHOICES = (32, 48, 64, 80, 96, 112, 128)
+SAMPLE_RATE_CHOICES = (24000, 44100, 48000)
+FORMAT_BITRATES = {codec: BITRATE_CHOICES for codec in AUDIO_FORMATS} | {'wav': ()}
+FORMAT_SAMPLE_RATES = {'mp3': SAMPLE_RATE_CHOICES, 'aac': SAMPLE_RATE_CHOICES,
+                       'opus': (24000, 48000), 'wav': (24000,)}
+FORMAT_EXTENSIONS = {'mp3': 'mp3', 'aac': 'm4a', 'opus': 'opus', 'wav': 'wav'}
+# Final chapter exports; Faster synthesis uses one GPU worker.
+DEFAULT_WORKERS = 20
+PARAGRAPH_PAUSE_MS = 800
+SCENE_PAUSE_MS = 1500
+# Bounded passages prevent runaway or truncated Qwen generations.
+MAX_SEGMENT_CHARACTERS = None
+MIN_PARAGRAPH_CHARACTERS = 100
+MAX_PARAGRAPH_CHARACTERS = 800
+PARAGRAPH_TARGET_MIN = 300
+PARAGRAPH_TARGET_MAX = 600
+INTRODUCTION_PAUSE_MS = 2000
+CHAPTER_START_MAX_CHARACTERS = 200
+SCENE_BREAK = '***'

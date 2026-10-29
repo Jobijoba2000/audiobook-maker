@@ -1,0 +1,12 @@
+models/
+sample_*.wav
+*.wav
+!ref_audio.wav
+*.json
+__pycache__/
+*.pyc
+.venv/
+.cache/
+outputs/
+artifacts/
+packages/qwentts_cpp_python/

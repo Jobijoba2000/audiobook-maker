@@ -1,0 +1,11 @@
+{
+  "voice": "expr_chap_s01_0004-7e5a77eb",
+  "seed": 42,
+  "temperature": 0.9,
+  "sampling": true,
+  "max_new_tokens": 2048,
+  "model_dir": "models/Qwen3-TTS-0.6B-Base",
+  "max_segment_characters": null,
+  "language": "French",
+  "repetition_penalty": 1.05
+}

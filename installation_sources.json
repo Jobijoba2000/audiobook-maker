@@ -1,0 +1,29 @@
+{
+  "python": {
+    "major": 3,
+    "minor": 12,
+    "bits": 64
+  },
+  "build_tools": {
+    "pip": "25.3",
+    "setuptools": "78.1.0",
+    "wheel": "0.45.1"
+  },
+  "pytorch": {
+    "torch": "2.6.0",
+    "torchaudio": "2.6.0",
+    "index_url": "https://download.pytorch.org/whl/cu124",
+    "cuda": "12.4"
+  },
+  "ffmpeg": {
+    "url": "https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-9.0.2-essentials_build.zip",
+    "sha256": "60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba",
+    "version": "9.0.2",
+    "size": 114768076
+  },
+  "sample": {
+    "source": "assets/samples/vingt-mille-lieues-chapitre-1.epub",
+    "destination": "input/test/Verne, Jules - Vingt mille lieues sous les mers - Chapitre 1.epub",
+    "sha256": "f6734362b5f40ccfab7a2dd58fe37f94bd0b79b8781cee7a4cc9d32ea1d71e29"
+  }
+}
