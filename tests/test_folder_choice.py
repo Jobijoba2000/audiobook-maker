@@ -53,6 +53,51 @@ class FolderChoiceTests(unittest.TestCase):
         self.assertEqual(self.process.call_count, 4)
         self.assert_outputs_under(self.input, self.output)
 
+    def pending_book(self):
+        source = self.collection / 'A.epub'
+        directory = self.output / self.collection.name / '.ebook-pending'
+        directory.mkdir(parents=True, exist_ok=True)
+        marker = directory / 'progression.json'
+        marker.write_bytes(b'Preserve this interrupted book and all its audio')
+        return {'source': source, 'directory': directory, 'completed': 1, 'total': 2, 'legacy': False}, marker
+
+    def test_choose_another_book_defers_incomplete_books_for_the_whole_session(self):
+        job, marker = self.pending_book()
+        original = marker.read_bytes()
+        for choice in ('', '0', 'n'):
+            with self.subTest(choice=choice), \
+                 patch('epub_audio.cli.main.discover_incomplete', return_value=[job]), \
+                 patch('epub_audio.cli.main.resume_books') as resume, \
+                 patch('builtins.input', side_effect=[choice, '', '', '']):
+                self.process.reset_mock()
+                self.assertEqual(main(self.flags), 0)
+                resume.assert_not_called()
+                self.assertEqual(self.process.call_count, 3)
+                self.assertNotIn(job['source'], [call.args[0] for call in self.process.call_args_list])
+                self.assertEqual(marker.read_bytes(), original)
+        self.assertIn('0. Choisir un autre livre', self.stdout.getvalue())
+
+    def test_invalid_startup_choice_can_return_to_other_books(self):
+        job, _ = self.pending_book()
+        with patch('epub_audio.cli.main.discover_incomplete', return_value=[job]), \
+             patch('epub_audio.cli.main.resume_books') as resume, \
+             patch('builtins.input', side_effect=['invalide', '0', '', '', '']):
+            self.assertEqual(main(self.flags), 0)
+        resume.assert_not_called()
+        self.assertEqual(self.process.call_count, 3)
+
+    def test_selected_batch_can_leave_interrupted_books_pending(self):
+        job, marker = self.pending_book()
+        original = marker.read_bytes()
+        with patch('epub_audio.cli.main.discover_incomplete', return_value=[job]), \
+             patch('epub_audio.cli.main.resume_books') as resume, \
+             patch('builtins.input', side_effect=['', 'p', '']):
+            self.assertEqual(main([str(self.input), '--output', str(self.output), *self.flags]), 0)
+        resume.assert_not_called()
+        self.assertEqual(self.process.call_count, 3)
+        self.assertNotIn(job['source'], [call.args[0] for call in self.process.call_args_list])
+        self.assertEqual(marker.read_bytes(), original)
+
     def assert_outputs_under(self, source_root, output_root):
         for call in self.process.call_args_list:
             expected = output_root / call.args[0].parent.relative_to(source_root)

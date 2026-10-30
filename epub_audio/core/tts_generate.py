@@ -11,6 +11,7 @@ from epub_audio.config.defaults import (DEFAULT_WORKERS, PARAGRAPH_PAUSE_MS, SCE
                                         INTRODUCTION_PAUSE_MS, MAX_SEGMENT_CHARACTERS, DEFAULT_SEGMENTATION)
 from epub_audio.core.text import SpeechSegment
 from epub_audio.core.tts_progress import BatchProgress
+from epub_audio.io.fs import retry_windows_io
 
 
 def create_synthesis_pool(engine, workers):
@@ -96,15 +97,9 @@ def render_chapter(engine, paragraphs, directory, destination, workers=DEFAULT_W
             pool.shutdown(wait=True, cancel_futures=True)
 
 
-def render_chapters(engine, chapters, directory, workers=DEFAULT_WORKERS, progress=print, executor=None,
-                    paragraph_pause_ms=PARAGRAPH_PAUSE_MS, scene_pause_ms=SCENE_PAUSE_MS,
-                    introduction='', segmentation=DEFAULT_SEGMENTATION):
-    """Render ordered chapters with a bounded work window spanning chapter borders.
-
-    Yields (chapter index, temporary WAV, segment directory) for later encoding.
-    Only the caller consumes results; worker processes keep synthesizing ahead.
-    """
-    directory = Path(directory)
+def chapter_segment_groups(engine, chapters, *, paragraph_pause_ms=PARAGRAPH_PAUSE_MS,
+                           scene_pause_ms=SCENE_PAUSE_MS, introduction='', segmentation=DEFAULT_SEGMENTATION):
+    """The same deterministic passage plan for synthesis and recovery checks."""
     groups = [list(plan_segments(paragraphs, maximum=getattr(engine, 'max_segment_characters', MAX_SEGMENT_CHARACTERS), paragraph_pause_ms=paragraph_pause_ms,
                                 scene_pause_ms=scene_pause_ms, segmentation=segmentation)) for paragraphs in chapters]
     if any(not segments for segments in groups):
@@ -115,27 +110,86 @@ def render_chapters(engine, chapters, directory, workers=DEFAULT_WORKERS, progre
         introduction_segments = (list(plan_segments([introduction], segmentation=segmentation))
                                  if segmentation == 'sentence' else [SpeechSegment(introduction)])
         groups[0][0:0] = introduction_segments
-    groups = [prepare_chapter_segments(segments, segmentation=segmentation,
+    return [prepare_chapter_segments(segments, segmentation=segmentation,
                                        maximum=getattr(engine, 'max_segment_characters', MAX_SEGMENT_CHARACTERS))
               for segments in groups]
+
+
+def render_chapters(engine, chapters, directory, workers=DEFAULT_WORKERS, progress=print, executor=None,
+                    paragraph_pause_ms=PARAGRAPH_PAUSE_MS, scene_pause_ms=SCENE_PAUSE_MS,
+                    introduction='', segmentation=DEFAULT_SEGMENTATION, checkpoint=None):
+    """Yield chapters in reading order, retaining validated work across interruptions."""
+    directory = Path(directory)
+    groups = chapter_segment_groups(engine, chapters, paragraph_pause_ms=paragraph_pause_ms,
+                                    scene_pause_ms=scene_pause_ms, introduction=introduction,
+                                    segmentation=segmentation)
     pending = deque()
-    pool = executor if executor is not None else create_synthesis_pool(engine, workers)
     tracker = BatchProgress(progress,
                             [directory / f'.segments-{index}' for index in range(1, len(groups) + 1)],
                             [len(segments) for segments in groups])
-    batch_progress = tracker if getattr(pool, 'batch_size', 1) > 1 else None
+    batch_progress = tracker if getattr(engine, 'batch_size', 1) > 1 else None
+
+    complete, cached = {}, {}
+    if checkpoint is not None:
+        from epub_audio.io.resume import segment_plan_hash
+        fingerprint = segment_plan_hash(groups)
+        if checkpoint.data.get('segment_plan_sha256', fingerprint) != fingerprint:
+            raise ValueError('Le découpage des passages a changé depuis l’interruption ; reprise refusée.')
+        checkpoint.data['segment_plan_sha256'] = fingerprint
+        class SavedProgress:
+            def __getattr__(self, name):
+                return getattr(tracker, name)
+
+            def __call__(self, jobs):
+                for _, path in jobs:
+                    checkpoint.segment_ready(path)
+                tracker(jobs)
+
+        batch_progress = SavedProgress()
+        for chapter_index, segments in enumerate(groups, 1):
+            wav = checkpoint.chapter_path(chapter_index)
+            chunks = directory / f'.segments-{chapter_index}'
+            chunks.mkdir(exist_ok=True)
+            if wav is not None:
+                complete[chapter_index] = wav
+                tracker([(s.text, chunks / f'{i:06d}.wav') for i, s in enumerate(segments)])
+            else:
+                checkpoint.data['chapters'].pop(str(chapter_index), None)
+                checkpoint.data['exports'].pop(str(chapter_index), None)
+                for i, segment in enumerate(segments):
+                    path = chunks / f'{i:06d}.wav'
+                    if checkpoint.segment_path(path) is not None:
+                        cached[path] = path
+                        tracker([(segment.text, path)])
+        checkpoint.save()
 
     def jobs():
         for chapter_index, segments in enumerate(groups, 1):
+            if chapter_index in complete:
+                continue
             chunks = directory / f'.segments-{chapter_index}'
-            chunks.mkdir()
+            chunks.mkdir(exist_ok=True)
             for segment_index, segment in enumerate(segments):
-                yield segment.text, chunks / f'{segment_index:06d}.wav'
+                path = chunks / f'{segment_index:06d}.wav'
+                if path not in cached:
+                    yield segment.text, path
 
     remaining = iter(jobs())
+    if checkpoint is not None and any(
+            index not in complete and any(directory / f'.segments-{index}' / f'{i:06d}.wav' not in cached
+                                           for i in range(len(segments)))
+            for index, segments in enumerate(groups, 1)):
+        prepare = getattr(engine, 'prepare', None)
+        if prepare is not None:
+            prepare()
+    pool = executor if executor is not None else create_synthesis_pool(engine, workers)
 
     def ordered_paths(chapter_index, segments):
         for index, segment in enumerate(segments, 1):
+            saved_path = directory / f'.segments-{chapter_index}' / f'{index - 1:06d}.wav'
+            if saved_path in cached:
+                yield saved_path
+                continue
             if batch_progress is None:
                 tracker.start([(segment.text, directory / f'.segments-{chapter_index}' / f'{index - 1:06d}.wav')])
             _queue_segments(pool, remaining, pending, workers, batch_progress=batch_progress)
@@ -151,14 +205,26 @@ def render_chapters(engine, chapters, directory, workers=DEFAULT_WORKERS, progre
             try:
                 yield path
             finally:
-                Path(path).unlink(missing_ok=True)
+                if checkpoint is None:
+                    Path(path).unlink(missing_ok=True)
 
     completed = False
     try:
         for chapter_index, segments in enumerate(groups, 1):
+            if chapter_index in complete:
+                yield chapter_index, complete[chapter_index], directory / f'.segments-{chapter_index}'
+                continue
             wav = directory / f'.chapter-{chapter_index}.wav'
-            assemble_wav(ordered_paths(chapter_index, segments), wav,
+            assembled = wav.with_suffix('.building.wav') if checkpoint is not None else wav
+            assemble_wav(ordered_paths(chapter_index, segments), assembled,
                          pauses_before_ms=[segment.pause_before_ms for segment in segments])
+            if checkpoint is not None:
+                retry_windows_io(assembled.replace, wav)
+                checkpoint.chapter_ready(chapter_index, wav)
+                chunks = directory / f'.segments-{chapter_index}'
+                for pattern in ('*.wav', '*.ready'):
+                    for path in chunks.glob(pattern):
+                        path.unlink()
             yield chapter_index, wav, directory / f'.segments-{chapter_index}'
         completed = True
     finally:

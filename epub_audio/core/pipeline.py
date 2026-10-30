@@ -10,8 +10,9 @@ import uuid
 import wave
 from epub_audio.adapters.ffmpeg import encode_chapter
 from epub_audio.io.epub import read_book, save_cover
-from epub_audio.core.models import Chapter
 from epub_audio.io.naming import book_basename, chapter_filename
+from epub_audio.io.resume import BookCheckpoint, file_hash
+from epub_audio.io.fs import retry_windows_io
 from epub_audio.core.options import AudioOptions
 from epub_audio.core.tts_qwen import QwenEngine
 from epub_audio.core.tts_generate import render_chapters
@@ -30,7 +31,7 @@ def process_book(epub_path, engine, *, speed=DEFAULT_SPEED, bitrate=DEFAULT_BITR
                  paragraph_pause_ms=PARAGRAPH_PAUSE_MS, scene_pause_ms=SCENE_PAUSE_MS, progress=None, options=None,
                  output_dir=None, master_output_dir=None, audio_format=DEFAULT_AUDIO_FORMAT, sample_rate=None,
                  segmentation=DEFAULT_SEGMENTATION, convert_numbers=DEFAULT_CONVERT_NUMBERS, book_plan=None,
-                 normalize=DEFAULT_NORMALIZE):
+                 normalize=DEFAULT_NORMALIZE, resume_dir=None):
     settings = options if options is not None else AudioOptions(
         speed=speed, bitrate=bitrate, workers=workers,
         paragraph_pause_ms=paragraph_pause_ms, scene_pause_ms=scene_pause_ms, audio_format=audio_format,
@@ -44,7 +45,12 @@ def process_book(epub_path, engine, *, speed=DEFAULT_SPEED, bitrate=DEFAULT_BITR
     if progress is None:
         progress = message
     epub_path = Path(epub_path).resolve()
-    plan = book_plan if book_plan is not None else read_book(epub_path)
+    checkpoint = BookCheckpoint.load(resume_dir) if resume_dir is not None else None
+    if isinstance(engine, QwenEngine):
+        engine.speed = speed
+    if checkpoint is not None:
+        checkpoint.validate(epub_path, settings, engine)
+    plan = checkpoint.plan() if checkpoint is not None else (book_plan if book_plan is not None else read_book(epub_path))
     chapters, cover = plan
     if plan.fallback_reason:
         message('Découpage de secours automatique (ancien système) pour ' + epub_path.name
@@ -56,15 +62,18 @@ def process_book(epub_path, engine, *, speed=DEFAULT_SPEED, bitrate=DEFAULT_BITR
                    else destination_root / 'master')
     destination_root.mkdir(parents=True, exist_ok=True)
     safe_name = book_basename(epub_path, destination_root)
-    work = Path(tempfile.mkdtemp(prefix='.ebook-', dir=destination_root))
+    work = Path(resume_dir).resolve() if resume_dir is not None else Path(tempfile.mkdtemp(prefix='.ebook-', dir=destination_root))
+    if checkpoint is None:
+        checkpoint = BookCheckpoint.create(work, epub_path, plan, settings, engine, master_root)
+    else:
+        master_root = Path(checkpoint.data['master_root'])
+        message(f'Reprise : {work}. Vérification des chapitres et passages conservés…')
     message(f'\nTraitement : {epub_path.name} ({len(chapters)} chapitres)')
     try:
         save_cover(cover, work)
         if plan.chapter_analysis:
             from epub_audio.io.llm_chapters import chapter_report, _write_json
             _write_json(work / 'decoupage.json', chapter_report(plan, epub_path))
-        if isinstance(engine, QwenEngine):
-            engine.speed = speed
         # Exhaust synthesis first: its process pool closes before any final export.
         with TtsProgress(progress, message) as tts:
             spoken_chapters = [[prepare_spoken_text(text) for text in
@@ -79,14 +88,22 @@ def process_book(epub_path, engine, *, speed=DEFAULT_SPEED, bitrate=DEFAULT_BITR
             ready = render_chapters(engine, spoken_chapters, work,
                                     workers=synthesis_workers, progress=tts.progress, paragraph_pause_ms=paragraph_pause_ms,
                                     scene_pause_ms=scene_pause_ms, introduction=introduction,
-                                    segmentation=settings.segmentation)
+                                    segmentation=settings.segmentation, checkpoint=checkpoint)
             with closing(ready):
-                prepared = list(ready)
-        export_workers = min(workers, len(prepared))
+                prepared = []
+                for index, wav, chunks in ready:
+                    # Also cover alternative renderers: only a returned chapter is complete.
+                    checkpoint.chapter_ready(index, wav)
+                    prepared.append((index, wav, chunks))
+        saved_exports = {index: entry for index, _, _ in prepared if (entry := checkpoint.exported(index))}
+        pending_exports = [chapter for chapter in prepared if chapter[0] not in saved_exports]
+        export_workers = min(workers, len(pending_exports))
         message(f'Synthèse du livre terminée. Export des chapitres en {audio_format.upper()} ({export_workers} workers)…')
 
         master_dir = work / 'Master WAV'
-        master_dir.mkdir()
+        if not master_dir.exists() and checkpoint.data.get('master_destination'):
+            master_dir = Path(checkpoint.data['master_destination'])
+        master_dir.mkdir(parents=True, exist_ok=True)
 
         def encode_and_save_chapter(index, wav, chunks):
             # Preserve the assembled PCM without resampling or rewriting it.
@@ -95,35 +112,43 @@ def process_book(epub_path, engine, *, speed=DEFAULT_SPEED, bitrate=DEFAULT_BITR
             if duration <= 0:
                 raise RuntimeError('Le chapitre WAV est vide.')
             master = master_dir / chapter_filename(index, len(chapters), duration, 'wav')
+            if wav != master:
+                if audio_format == 'wav' and not settings.normalize:
+                    shutil.copy2(wav, master)
+                else:
+                    retry_windows_io(wav.replace, master)
+            temporary_audio = work / f'.export-{index}.{extension}'
             if audio_format == 'wav' and not settings.normalize:
-                shutil.copy2(wav, master)
-                temporary_audio = wav
+                shutil.copy2(master, temporary_audio)
             else:
-                wav.rename(master)
                 # Encode from the master; it also survives a failed conversion.
-                temporary_audio = work / f'.chapter-{index}.{extension}'
                 export_options = {'normalize': True} if settings.normalize else {}
                 duration = encode_chapter(master, temporary_audio, bitrate=bitrate, audio_format=audio_format,
                                           sample_rate=sample_rate, title=chapters[index - 1].title,
                                           album=plan.metadata.title or epub_path.stem, track=index, **export_options)
             name = chapter_filename(index, len(chapters), duration, extension)
-            temporary_audio.rename(work / name)
-            chunks.rmdir()
-            return duration, name
+            retry_windows_io(temporary_audio.replace, work / name)
+            if wav != master:
+                wav.unlink(missing_ok=True)
+            return index, duration, name
 
-        exports_tracker = ExportTracker(len(prepared), export_workers, audio_format, progress)
-        exports_tracker.show()
+        exports_tracker = ExportTracker(len(pending_exports), max(1, export_workers), audio_format, progress)
+        if pending_exports:
+            exports_tracker.show()
 
         def export_chapter(index, wav, chunks):
             with exports_tracker.task():
                 return encode_and_save_chapter(index, wav, chunks)
 
-        total = 0.0
-        with ThreadPoolExecutor(max_workers=export_workers) as encoder:
-            exports = [encoder.submit(export_chapter, *chapter) for chapter in prepared]
+        total = sum(entry['duration'] for entry in saved_exports.values())
+        with ThreadPoolExecutor(max_workers=max(1, export_workers)) as encoder:
+            exports = [encoder.submit(export_chapter, *chapter) for chapter in pending_exports]
             try:
                 for future in as_completed(exports):
-                    duration, name = future.result()
+                    index, duration, name = future.result()
+                    checkpoint.data['exports'][str(index)] = {'name': name, 'duration': duration,
+                                                              'sha256': file_hash(work / name)}
+                    checkpoint.save()
                     total += duration
                     message(f'  Généré : {name}')
             except BaseException:
@@ -135,15 +160,31 @@ def process_book(epub_path, engine, *, speed=DEFAULT_SPEED, bitrate=DEFAULT_BITR
             if sidecar.is_file() and (sidecar.suffix == '.epub' or sidecar.stem == 'cover'
                                       or sidecar.name == 'decoupage.json'):
                 shutil.copy2(sidecar, master_dir / sidecar.name)
-        destination = destination_root / f'{safe_name} - {format_duration_full(total)}'
+        destination = Path(checkpoint.data['destination']) if checkpoint.data.get('destination') else None
         # Keep the same folder name in both trees, without overwriting either.
-        while destination.exists() or (master_root / destination.name).exists():
-            destination = destination_root / f'{safe_name} - {format_duration_full(total)}_{uuid.uuid4().hex[:8]}'
-        master_root.mkdir(parents=True, exist_ok=True)
-        os.rename(work, destination)
-        work = destination
+        if destination is None:
+            destination = destination_root / f'{safe_name} - {format_duration_full(total)}'
+            while destination.exists() or (master_root / destination.name).exists():
+                destination = destination_root / f'{safe_name} - {format_duration_full(total)}_{uuid.uuid4().hex[:8]}'
         master_destination = master_root / destination.name
-        os.rename(work / 'Master WAV', master_destination)
+        checkpoint.data.update(destination=str(destination), master_destination=str(master_destination))
+        checkpoint.save()
+        master_root.mkdir(parents=True, exist_ok=True)
+        if work != destination:
+            retry_windows_io(os.rename, work, destination)
+            work = destination
+            checkpoint.directory = work
+        if (work / 'Master WAV').exists():
+            retry_windows_io(os.rename, work / 'Master WAV', master_destination)
+        for _, _, chunks in prepared:
+            folder = work / chunks.name
+            # Old interrupted attempts can leave retry directories behind.
+            if folder.is_dir():
+                shutil.rmtree(folder)
+        for index, _, _ in prepared:
+            (work / f'.chapter-{index}.building.wav').unlink(missing_ok=True)
+        (work / 'erreur.txt').unlink(missing_ok=True)
+        (work / 'progression.json').unlink()
         message(f'Master WAV conservé : {master_destination}')
         message(f'Terminé : {destination}')
         return destination

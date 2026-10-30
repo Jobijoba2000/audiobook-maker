@@ -11,7 +11,7 @@ import tempfile
 from epub_audio.adapters.ollama import ChapterLLMError
 from epub_audio.core.models import Chapter
 from epub_audio.core.text import has_spoken_text, is_scene_break
-from epub_audio.io.fs import ROOT
+from epub_audio.io.fs import ROOT, retry_windows_io
 
 CACHE_DIR = ROOT / '.cache' / 'chapter-plans'
 VERSION = 4
@@ -121,7 +121,7 @@ def _write_json(path, data):
             temporary = Path(stream.name)
             json.dump(data, stream, ensure_ascii=False, indent=2, allow_nan=False)
             stream.write('\n')
-        os.replace(temporary, path)
+        retry_windows_io(os.replace, temporary, path)
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)

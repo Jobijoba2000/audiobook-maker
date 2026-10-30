@@ -75,6 +75,44 @@ Les anciens arguments `--engine` et `--model-size` sont retirés. La génératio
 TTS utilise les poids locaux. `--offline` interdit les téléchargements des
 composants qui respectent ce réglage.
 
+## Reprendre un livre interrompu
+
+Au lancement de `start_ebook.bat`, les livres interrompus présents dans
+`output` sont affichés avec l’option **0. Choisir un autre livre**, sélectionnée
+par défaut avec Entrée. Les traitements interrompus restent alors en attente
+et sont écartés du lot de cette session. Pour reprendre, saisir les numéros
+des livres affichés, par exemple `1` ou `1-3`.
+Sélectionner à nouveau un EPUB interrompu propose également sa reprise ;
+`p` permet de le laisser en attente et de traiter les autres livres du lot.
+Avec `--yes`,
+les traitements interrompus correspondants sont repris automatiquement.
+
+```powershell
+.\start_ebook.bat --list-incomplete
+.\start_ebook.bat --resume
+```
+
+`--list-incomplete` affiche les traitements conservés sans charger le modèle
+ni modifier les fichiers. `--resume` reprend les livres détectés dans `output`
+ou dans le dossier passé à `--output`.
+
+Chaque traitement conserve son découpage, ses réglages et son avancement dans
+`progression.json`. La reprise vérifie l’EPUB, le plan des passages et les
+empreintes SHA-256 des WAV. Un chapitre est déclaré terminé seulement après
+l’assemblage de tous ses passages. Les passages validés restent disponibles
+jusqu’à cette étape ; un WAV partiel ou modifié est régénéré. Les chapitres
+déjà assemblés et les exports terminés sont réutilisés, sans relancer le LLM.
+Une interruption pendant l’export ou le rangement final est aussi récupérable.
+La sauvegarde de progression est retirée une fois le livre entièrement terminé.
+
+Les anciens dossiers `.ebook-*` contenant `decoupage.json` peuvent être
+récupérés avec le journal TTS local et les derniers réglages mémorisés. Le
+programme vérifie le texte, les traces de chaque passage et la cohérence des
+données PCM avant de conserver un chapitre. Le dernier chapitre assemblé
+reste considéré comme incomplet. Si les preuves manquent, il est régénéré ;
+si le traitement ancien ne peut pas être identifié avec certitude, la reprise
+est refusée et ses fichiers sont conservés.
+
 ## Voix et génération
 
 Seul l’échantillon SIWIS nº 4 est fourni dans `voices/references_fr` :

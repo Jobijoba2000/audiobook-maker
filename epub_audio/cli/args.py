@@ -21,6 +21,10 @@ def arguments(argv=None, default_directory=None):
     parser.add_argument('paths', nargs='*', type=Path, help='Fichiers EPUB ou dossiers (input du programme par défaut).')
     parser.add_argument('--output', '-o', type=Path,
                         help='Dossier de destination (output du programme par défaut).')
+    parser.add_argument('--resume', action='store_true',
+                        help='Reprendre les livres interrompus détectés dans output avec leurs réglages enregistrés.')
+    parser.add_argument('--list-incomplete', action='store_true',
+                        help='Lister les livres interrompus sans charger le modèle ni modifier les fichiers.')
     parser.add_argument('--batching', action=argparse.BooleanOptionalAction, default=None,
                         help='Batching activé par défaut ; --no-batching pour désactiver.')
     parser.add_argument('--continuous-batching', action=argparse.BooleanOptionalAction, default=None,

@@ -17,6 +17,8 @@ from epub_audio.core.tts_qwen import QwenEngine, configuration
 from epub_audio.adapters.ffmpeg import require_tools, tool_executable
 from epub_audio.io.fs import INPUT_DIR, OUTPUT_DIR
 from epub_audio.io.preferences import load_preferences, save_preferences
+from epub_audio.io.resume import discover_incomplete
+from epub_audio.cli.resume import show_incomplete, select_incomplete, resume_books
 from epub_audio.config.defaults import (ENGINE_NAME, DEFAULT_MODEL_SIZE, DEFAULT_BATCHING,
                                         DEFAULT_BATCH_SIZE, FORMAT_SAMPLE_RATES, FORMAT_EXTENSIONS,
                                         SEGMENTATION_MODES, DEFAULT_SEGMENTATION, DEFAULT_CONVERT_NUMBERS,
@@ -77,6 +79,26 @@ def export_chapter_plans(epubs, destinations, plans, message):
 def main(argv=None, default_directory=None):
     args = arguments(argv, default_directory)
     output_root = args.output.resolve()
+    resumed_failed = 0
+    deferred_sources = set()
+    startup = (not args.yes and not args.list_voices and not args.paths_explicit
+               and not args.output_explicit and default_directory is None and not args.chapters_only)
+    incomplete = discover_incomplete(output_root) if args.resume or args.list_incomplete or startup else []
+    if args.list_incomplete:
+        show_incomplete(incomplete) if incomplete else print('Aucun livre interrompu détecté.')
+        return 0
+    if args.resume or (startup and incomplete):
+        if not incomplete:
+            print('Aucun livre interrompu détecté.')
+            return 0
+        if args.yes or args.resume:
+            show_incomplete(incomplete)
+            chosen = incomplete
+        else:
+            chosen = select_incomplete(incomplete)
+        if chosen:
+            return resume_books(chosen, output_root, offline=args.offline)
+        deferred_sources = {job['source'].resolve() for job in incomplete}
     book_selected = False
     if (not args.yes and not args.list_voices and not args.paths_explicit
             and not args.output_explicit and default_directory is None):
@@ -117,7 +139,14 @@ def main(argv=None, default_directory=None):
         else:
             raise ValueError(f'Fichier EPUB ou dossier introuvable : {path}')
     epubs = list(dict.fromkeys(epubs))
+    deferred = [path for path in epubs if path in deferred_sources]
+    for path in deferred:
+        print(f'Livre laissé en attente pour une reprise ultérieure : {path.name}')
+    epubs = [path for path in epubs if path not in deferred_sources]
     if not epubs:
+        if deferred:
+            print('Aucun autre livre sélectionné. Les traitements interrompus restent en attente.')
+            return 0
         print('Aucun fichier .epub trouvé dans les dossiers indiqués.')
         print('Dossiers recherchés : ' + ', '.join(str(path.resolve()) for path in args.paths))
         return 0
@@ -129,6 +158,22 @@ def main(argv=None, default_directory=None):
         if not epubs:
             print('Aucun livre sélectionné.')
             return 0
+    if not args.chapters_only:
+        incomplete = discover_incomplete(args.output.resolve())
+        matching = [job for job in incomplete if job['source'].resolve() in epubs
+                    and job['directory'].parent.resolve() == destinations[job['source'].resolve()].resolve()]
+        if matching:
+            show_incomplete(matching)
+            raw = '' if args.yes else input('Entrée pour reprendre ; p pour laisser en attente et traiter les autres livres ; n pour recommencer : ').strip().lower()
+            if raw != 'n':
+                if raw != 'p':
+                    resumed_failed = resume_books(matching, output_root, offline=args.offline)
+                else:
+                    print('Les livres interrompus restent en attente pour une reprise ultérieure.')
+                handled = {job['source'].resolve() for job in matching}
+                epubs = [path for path in epubs if path not in handled]
+                if not epubs:
+                    return resumed_failed
     llm_chapters = args.llm_chapters if args.llm_chapters is not None else preferences.get('llm_chapters', False)
     if ask('llm_chapters') and args.llm_chapters is None:
         llm_chapters = select_llm_chapters(llm_chapters)
@@ -257,11 +302,12 @@ def main(argv=None, default_directory=None):
     except OSError as exc:
         console.message(f'Impossible de mémoriser les réglages : {exc}')
     started = time.perf_counter()
-    failed = False
+    failed = bool(resumed_failed)
     plans = None
     if llm_chapters:
-        plans, failed = plan_books(epubs, use_llm=True, model=args.llm_model,
-                                   url=args.llm_url, message=console.message)
+        plans, planning_failed = plan_books(epubs, use_llm=True, model=args.llm_model,
+                                            url=args.llm_url, message=console.message)
+        failed = failed or planning_failed
     if plans is not None and not plans:
         return 1
     engine = QwenEngine(voice, offline=args.offline, message=console.message, speed=rate,
